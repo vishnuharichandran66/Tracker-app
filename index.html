@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Advanced Tracker — Tasks • Habits • Expenses • Time • Goals</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+      --brand:#0f172a; --pill:#f1f5f9; --danger:#ef4444;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+           background: linear-gradient(#f8fafc,#fff); color: var(--ink); }
+    header { position: sticky; top:0; z-index:10; backdrop-filter: blur(6px);
+             background: rgba(255,255,255,.7); border-bottom:1px solid var(--line); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 20px; margin:0; display:flex; align-items:center; gap:10px; }
+    .sub { color: var(--muted); font-size: 12px; margin-top:2px; }
+    .row { display:flex; align-items:center; gap:8px; }
+    .spacer { flex:1; }
+    button, input, select, textarea {
+      border:1px solid var(--line); background: #fff; color: var(--ink);
+      padding: 10px 12px; border-radius: 12px; font-size: 14px;
+    }
+    button { cursor:pointer; }
+    button.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
+    button.ghost { background: #fff; }
+    button.danger { background: var(--danger); color:#fff; border-color: var(--danger); }
+    .pill { background: var(--pill); padding: 2px 8px; border-radius: 999px; font-size: 12px; color:var(--muted); }
+    .grid { display:grid; gap: 16px; }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    @media (max-width: 900px){ .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border:1px solid var(--line); border-radius: var(--radius); }
+    .card .head { padding: 14px 16px; border-bottom:1px solid var(--line); font-weight: 600; }
+    .card .body { padding: 16px; }
+    .stat { display:flex; align-items:center; gap:10px; }
+    .stat .big { font-size: 18px; font-weight: 700; }
+    .item { display:flex; align-items:center; justify-content:space-between;
+            gap:12px; padding:12px; border:1px solid var(--line); border-radius: 14px; background:#fff; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .tabs { display:flex; gap:8px; flex-wrap: wrap; }
+    .tab { padding:10px 12px; border-radius: 12px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+    .tab.active { background: var(--brand); color:#fff; border-color: var(--brand); }
+    .empty { text-align:center; padding:28px; border:1px dashed var(--line); border-radius: 16px; color: var(--muted); }
+    .bar { height:10px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
+    .bar > div { height:100%; background:#0f172a; }
+    .danger-text { color: var(--danger); }
+    .nowrap { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap row">
+      <div>
+        <h1>Advanced Tracker <span class="pill">Local-first</span></h1>
+        <div class="sub">Tasks • Habits • Expenses • Time • Goals</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="exportBtn" class="ghost">Export</button>
+        <label class="row" style="gap:8px;">
+          <input id="importFile" type="file" accept="application/json" style="display:none;">
+          <button class="ghost" onclick="document.getElementById('importFile').click()">Import</button>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap grid">
+    <!-- Stats -->
+    <div class="grid grid-4">
+      <div class="card"><div class="body stat"><div>✅</div><div><div class="muted">Tasks done</div><div id="statTasks" class="big">0</div></div></div></div>
+      <div class="card"><div class="body stat"><div>📋</div><div><div class="muted">Habits ticked today</div><div id="statHabits" class="big">0</div></div></div></div>
+      <div class="card"><div class="body stat"><div>💸</div><div><div class="muted">Spent today</div><div id="statSpent" class="big">₹0</div></div></div></div>
+      <div class="card"><div class="body stat"><div>⏱️</div><div><div class="muted">Minutes logged</div><div id="statMinutes" class="big">0</div></div></div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="card">
+      <div class="head">
+        <div class="row">
+          <div class="tabs" id="tabs"></div>
+          <div class="spacer"></div>
+          <input id="taskSearch" placeholder="Quick search (tasks only)">
+        </div>
+      </div>
+      <div class="body">
+        <!-- TASKS -->
+        <section id="tasks" class="grid" hidden>
+          <div class="grid grid-4">
+            <input id="tTitle" placeholder="Task title">
+            <input id="tTag" placeholder="Tag (e.g., Work)">
+            <select id="tPriority">
+              <option value="low">Low</option>
+              <option value="normal" selected>Normal</option>
+              <option value="high">High</option>
+            </select>
+            <div class="row" style="gap:8px;">
+              <input id="tDue" type="date" style="flex:1;">
+              <button class="primary" id="tAdd">Add</button>
+            </div>
+          </div>
+          <div id="tList" class="grid"></div>
+        </section>
+
+        <!-- HABITS -->
+        <section id="habits" class="grid" hidden>
+          <div class="grid grid-3">
+            <input id="hName" placeholder="Habit (e.g., Read 20m)">
+            <select id="hFreq">
+              <option value="daily" selected>Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <button id="hAdd" class="primary">Add Habit</button>
+          </div>
+          <div id="hList" class="grid"></div>
+        </section>
+
+        <!-- EXPENSES -->
+        <section id="expenses" class="grid" hidden>
+          <div class="grid grid-4">
+            <input id="eTitle" placeholder="Expense title">
+            <input id="eAmount" type="number" placeholder="Amount">
+            <input id="eCat" placeholder="Category" value="General">
+            <div class="row" style="gap:8px;">
+              <input id="eDate" type="date" style="flex:1;">
+              <button id="eAdd" class="primary">Add</button>
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="card"><div class="head">Spend by Category</div><div class="body"><canvas id="catChart" height="220"></canvas></div></div>
+            <div class="card"><div class="head">Last 14 Days</div><div class="body"><canvas id="daysChart" height="220"></canvas></div></div>
+          </div>
+          <div class="card">
+            <div class="head">All expenses</div>
+            <div class="body grid" id="eList"></div>
+          </div>
+        </section>
+
+        <!-- TIME -->
+        <section id="time" class="grid" hidden>
+          <div class="grid grid-4">
+            <input id="tmProject" placeholder="Project / Activity">
+            <input id="tmMinutes" type="number" placeholder="Minutes">
+            <input id="tmDate" type="date">
+            <button id="tmAdd" class="primary">Log</button>
+          </div>
+          <div class="card"><div class="head">Last 7 Days (minutes)</div><div class="body"><canvas id="timeChart" height="240"></canvas></div></div>
+          <div class="card"><div class="head">All logs</div><div class="body grid" id="tmList"></div></div>
+        </section>
+
+        <!-- GOALS -->
+        <section id="goals" class="grid" hidden>
+          <div class="grid grid-4">
+            <input id="gTitle" placeholder="Goal title">
+            <input id="gDesc" placeholder="Short description">
+            <input id="gTarget" type="date">
+            <button id="gAdd" class="primary">Add Goal</button>
+          </div>
+          <div id="gList" class="grid"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Insights -->
+    <div class="card">
+      <div class="head">Insights (last 7 days)</div>
+      <div class="body grid grid-3">
+        <canvas id="iTasks" height="160"></canvas>
+        <canvas id="iSpend" height="160"></canvas>
+        <canvas id="iMinutes" height="160"></canvas>
+      </div>
+    </div>
+
+    <div class="muted" style="text-align:center;">Your data stays in your browser • Export anytime</div>
+  </main>
+
+  <script>
+    // ---------- Utilities ----------
+    const uid = () => Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,8);
+    const todayStr = (d=new Date()) => d.toISOString().slice(0,10);
+    const toDateStr = (ms) => new Date(ms).toISOString().slice(0,10);
+    const INR = "₹";
+    const store = {
+      get(k, v){ try { return JSON.parse(localStorage.getItem(k)) ?? v; } catch { return v; } },
+      set(k, v){ localStorage.setItem(k, JSON.stringify(v)); },
+    };
+
+    const state = {
+      tasks: store.get("adv.tasks", []),
+      habits: store.get("adv.habits", []),
+      expenses: store.get("adv.expenses", []),
+      timeLogs: store.get("adv.timelogs", []),
+      goals: store.get("adv.goals", []),
+    };
+
+    function saveAll(){
+      store.set("adv.tasks", state.tasks);
+      store.set("adv.habits", state.habits);
+      store.set("adv.expenses", state.expenses);
+      store.set("adv.timelogs", state.timeLogs);
+      store.set("adv.goals", state.goals);
+      render();
+    }
+
+    // ---------- Tabs ----------
+    const sections = ["tasks","habits","expenses","time","goals"];
+    const tabs = document.getElementById("tabs");
+    sections.forEach((id,i)=>{
+      const btn = document.createElement("button");
+      btn.className = "tab" + (i===0 ? " active" : "");
+      btn.textContent = id[0].toUpperCase() + id.slice(1);
+      btn.onclick = () => {
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        btn.classList.add("active");
+        sections.forEach(s => document.getElementById(s).hidden = (s!==id));
+      };
+      tabs.appendChild(btn);
+    });
+    // default show tasks
+    sections.forEach((s,i)=> document.getElementById(s).hidden = i!==0);
+
+    // ---------- Stats ----------
+    function computeStats(){
+      const tasksDone = state.tasks.filter(t=>t.done).length;
+      const habitsToday = state.habits.filter(h=> h.lastTick && toDateStr(h.lastTick)===todayStr()).length;
+      const spentToday = state.expenses.filter(e=> toDateStr(e.date)===todayStr()).reduce((a,b)=>a+(+b.amount||0),0);
+      const minutesToday = state.timeLogs.filter(l=> toDateStr(l.date)===todayStr()).reduce((a,b)=>a+(+b.minutes||0),0);
+      return { tasksDone, habitsToday, spentToday, minutesToday };
+    }
+
+    // ---------- Tasks ----------
+    const tTitle = document.getElementById("tTitle");
+    const tTag = document.getElementById("tTag");
+    const tPriority = document.getElementById("tPriority");
+    const tDue = document.getElementById("tDue"); tDue.value = todayStr();
+    const tAdd = document.getElementById("tAdd");
+    const tList = document.getElementById("tList");
+    const tSearch = document.getElementById("taskSearch");
+    tAdd.onclick = () => {
+      if(!tTitle.value.trim()) return;
+      state.tasks.unshift({ id: uid(), title:tTitle.value.trim(), notes:"", done:false, tag:tTag.value.trim(), priority:tPriority.value, due:tDue.value, created: Date.now() });
+      tTitle.value=""; tTag.value=""; tPriority.value="normal"; tDue.value=todayStr();
+      saveAll();
+    };
+    tSearch.oninput = renderTasks;
+    function renderTasks(){
+      const q = (tSearch.value||"").toLowerCase();
+      const list = state.tasks.filter(t => (t.title+" "+t.tag+" "+t.priority+" "+(t.notes||"")).toLowerCase().includes(q));
+      tList.innerHTML = list.length? "" : `<div class="empty">No tasks yet — add above.</div>`;
+      list.forEach(t=>{
+        const el = document.createElement("div"); el.className="item";
+        el.innerHTML = `
+          <div class="row" style="gap:10px;">
+            <input type="checkbox" ${t.done?"checked":""} data-id="${t.id}">
+            <div>
+              <div style="font-weight:600; ${t.done?"text-decoration:line-through; color:#94a3b8;":""}">${escapeHtml(t.title)}</div>
+              <div class="muted row" style="gap:8px;">
+                ${t.tag?`<span class="pill">#${escapeHtml(t.tag)}</span>`:""}
+                <span>Priority: ${t.priority}</span>
+                <span>Due: ${t.due}</span>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="ghost" data-edit="${t.id}">Edit</button>
+            <button class="danger" data-del="${t.id}">Delete</button>
+          </div>
+        `;
+        // listeners
+        el.querySelector(`[data-id="${t.id}"]`).onchange = (e)=>{ t.done = e.target.checked; saveAll(); };
+        el.querySelector(`[data-del="${t.id}"]`).onclick = ()=>{ state.tasks = state.tasks.filter(x=>x.id!==t.id); saveAll(); };
+        el.querySelector(`[data-edit="${t.id}"]`).onclick = ()=>{
+          const title = prompt("Task title", t.title); if(title===null) return;
+          const tag = prompt("Tag", t.tag||"") ?? t.tag;
+          const priority = prompt("Priority (low/normal/high)", t.priority)||t.priority;
+          const due = prompt("Due (YYYY-MM-DD)", t.due)||t.due;
+          t.title=title.trim(); t.tag=(tag||"").trim(); t.priority=priority; t.due=due;
+          saveAll();
+        };
+        tList.appendChild(el);
+      });
+    }
+
+    // ---------- Habits ----------
+    const hName = document.getElementById("hName");
+    const hFreq = document.getElementById("hFreq");
+    const hAdd = document.getElementById("hAdd");
+    const hList = document.getElementById("hList");
+    hAdd.onclick = ()=>{
+      if(!hName.value.trim()) return;
+      state.habits.unshift({ id: uid(), name:hName.value.trim(), freq:hFreq.value, streak:0, lastTick:null, created: Date.now() });
+      hName.value=""; hFreq.value="daily"; saveAll();
+    };
+    function renderHabits(){
+      hList.innerHTML = state.habits.length? "" : `<div class="empty">No habits yet — track routines to build momentum.</div>`;
+      state.habits.forEach(h=>{
+        const el = document.createElement("div"); el.className="item";
+        el.innerHTML = `
+          <div>
+            <div style="font-weight:600;">${escapeHtml(h.name)} <span class="muted">(${h.freq})</span></div>
+            <div class="muted">Streak: ${h.streak}${h.lastTick?` • Last: ${new Date(h.lastTick).toLocaleDateString()}`:""}</div>
+          </div>
+          <div class="row">
+            <button class="ghost" data-tick="${h.id}">Tick</button>
+            <button class="danger" data-del="${h.id}">Delete</button>
+          </div>
+        `;
+        el.querySelector(`[data-tick="${h.id}"]`).onclick = ()=>{ h.streak++; h.lastTick = Date.now(); saveAll(); };
+        el.querySelector(`[data-del="${h.id}"]`).onclick = ()=>{ state.habits = state.habits.filter(x=>x.id!==h.id); saveAll(); };
+        hList.appendChild(el);
+      });
+    }
+
+    // ---------- Expenses ----------
+    const eTitle = document.getElementById("eTitle");
+    const eAmount = document.getElementById("eAmount");
+    const eCat = document.getElementById("eCat");
+    const eDate = document.getElementById("eDate"); eDate.value = todayStr();
+    const eAdd = document.getElementById("eAdd");
+    const eList = document.getElementById("eList");
+    let catChart, daysChart;
+    eAdd.onclick = ()=>{
+      if(!eTitle.value.trim()) return;
+      state.expenses.unshift({ id: uid(), title:eTitle.value.trim(), amount: Number(eAmount.value)||0, cat: eCat.value.trim()||"General", date: new Date(eDate.value).getTime() });
+      eTitle.value=""; eAmount.value=""; eCat.value="General"; eDate.value = todayStr();
+      saveAll();
+    };
+    function renderExpenses(){
+      eList.innerHTML = state.expenses.length? "" : `<div class="empty">No expenses — start tracking to see trends.</div>`;
+      state.expenses.forEach(e=>{
+        const el = document.createElement("div"); el.className="item";
+        el.innerHTML = `
+          <div>
+            <div style="font-weight:600;">${escapeHtml(e.title)}</div>
+            <div class="muted">${toDateStr(e.date)} • ${escapeHtml(e.cat)}</div>
+          </div>
+          <div class="row">
+            <div class="nowrap" style="font-weight:700;">${INR}${(+e.amount||0).toFixed(0)}</div>
+            <button class="danger" data-del="${e.id}">Delete</button>
+          </div>
+        `;
+        el.querySelector(`[data-del="${e.id}"]`).onclick = ()=>{ state.expenses = state.expenses.filter(x=>x.id!==e.id); saveAll(); };
+        eList.appendChild(el);
+      });
+
+      // charts
+      const byCat = Object.entries(state.expenses.reduce((m,e)=>{ m[e.cat]=(m[e.cat]||0)+(+e.amount||0); return m; },{}));
+      const catLabels = byCat.map(([k])=>k), catData = byCat.map(([,v])=>v);
+      const last14 = [...Array(14)].map((_,i)=>{
+        const d = new Date(); d.setDate(d.getDate()-(13-i));
+        const key = todayStr(d);
+        const total = state.expenses.filter(e=> toDateStr(e.date)===key).reduce((a,b)=>a+(+b.amount||0),0);
+        return { label: key.slice(5), total };
+      });
+      const dayLabels = last14.map(x=>x.label), dayTotals = last14.map(x=>x.total);
+
+      if(catChart) catChart.destroy();
+      catChart = new Chart(document.getElementById("catChart"), {
+        type: 'pie',
+        data: { labels: catLabels, datasets: [{ data: catData }] },
+        options: { plugins: { tooltip: { callbacks: { label: ctx => `${ctx.label}: ${INR}${ctx.parsed.toFixed(0)}` } } } }
+      });
+
+      if(daysChart) daysChart.destroy();
+      daysChart = new Chart(document.getElementById("daysChart"), {
+        type: 'bar',
+        data: { labels: dayLabels, datasets: [{ label: 'Spend', data: dayTotals }] },
+        options: { scales:{ y:{ beginAtZero:true } }, plugins:{ tooltip:{ callbacks:{ label: ctx => `${INR}${ctx.parsed.toFixed(0)}` } } } }
+      });
+    }
+
+    // ---------- Time ----------
+    const tmProject = document.getElementById("tmProject");
+    const tmMinutes = document.getElementById("tmMinutes");
+    const tmDate = document.getElementById("tmDate"); tmDate.value = todayStr();
+    const tmAdd = document.getElementById("tmAdd");
+    const tmList = document.getElementById("tmList");
+    let timeChart;
+    tmAdd.onclick = ()=>{
+      if(!tmProject.value.trim()) return;
+      state.timeLogs.unshift({ id: uid(), project: tmProject.value.trim(), minutes: Number(tmMinutes.value)||0, date: new Date(tmDate.value).getTime() });
+      tmProject.value=""; tmMinutes.value=""; tmDate.value=todayStr();
+      saveAll();
+    };
+    function renderTime(){
+      tmList.innerHTML = state.timeLogs.length? "" : `<div class="empty">No time logs — track where your time goes.</div>`;
+      state.timeLogs.forEach(l=>{
+        const el = document.createElement("div"); el.className="item";
+        el.innerHTML = `
+          <div>
+            <div style="font-weight:600;">${escapeHtml(l.project)}</div>
+            <div class="muted">${toDateStr(l.date)}</div>
+          </div>
+          <div class="row">
+            <div class="nowrap" style="font-weight:700;">${l.minutes} min</div>
+            <button class="danger" data-del="${l.id}">Delete</button>
+          </div>
+        `;
+        el.querySelector(`[data-del="${l.id}"]`).onclick = ()=>{ state.timeLogs = state.timeLogs.filter(x=>x.id!==l.id); saveAll(); };
+        tmList.appendChild(el);
+      });
+
+      // weekly chart (7 days)
+      const last7 = [...Array(7)].map((_,i)=>{
+        const d = new Date(); d.setDate(d.getDate()-(6-i));
+        const key = todayStr(d);
+        const total = state.timeLogs.filter(e=> toDateStr(e.date)===key).reduce((a,b)=>a+(+b.minutes||0),0);
+        return { label: key.slice(5), total };
+      });
+      if(timeChart) timeChart.destroy();
+      timeChart = new Chart(document.getElementById("timeChart"), {
+        type:'line',
+        data:{ labels: last7.map(x=>x.label), datasets:[{ label:'Minutes', data:last7.map(x=>x.total) }] },
+        options:{ scales:{ y:{ beginAtZero:true } } }
+      });
+    }
+
+    // ---------- Goals ----------
+    const gTitle = document.getElementById("gTitle");
+    const gDesc = document.getElementById("gDesc");
+    const gTarget = document.getElementById("gTarget"); gTarget.value = todayStr();
+    const gAdd = document.getElementById("gAdd");
+    const gList = document.getElementById("gList");
+    gAdd.onclick = ()=>{
+      if(!gTitle.value.trim()) return;
+      state.goals.unshift({ id: uid(), title:gTitle.value.trim(), desc:gDesc.value.trim(), targetDate:gTarget.value, progress:0, created: Date.now() });
+      gTitle.value=""; gDesc.value=""; gTarget.value=todayStr(); saveAll();
+    };
+    function renderGoals(){
+      gList.innerHTML = state.goals.length? "" : `<div class="empty">No goals yet — define outcomes and track progress.</div>`;
+      state.goals.forEach(g=>{
+        const el = document.createElement("div"); el.className="card";
+        el.innerHTML = `
+          <div class="body grid">
+            <div class="row">
+              <div style="flex:1;">
+                <div style="font-weight:600;">${escapeHtml(g.title)}</div>
+                <div class="muted">Target: ${g.targetDate}</div>
+                ${g.desc?`<div class="muted" style="margin-top:6px;">${escapeHtml(g.desc)}</div>`:""}
+              </div>
+              <button class="danger" data-del="${g.id}">Delete</button>
+            </div>
+            <div class="row" style="gap:10px;">
+              <input type="number" min="0" max="100" value="${g.progress}" data-p="${g.id}" style="width:90px;">
+              <div class="bar" style="flex:1;"><div style="width:${g.progress}%"></div></div>
+              <div class="muted nowrap" id="p-${g.id}">${g.progress}%</div>
+            </div>
+          </div>
+        `;
+        el.querySelector(`[data-del="${g.id}"]`).onclick = ()=>{ state.goals = state.goals.filter(x=>x.id!==g.id); saveAll(); };
+        el.querySelector(`[data-p="${g.id}"]`).oninput = (e)=>{
+          g.progress = clamp(+e.target.value||0,0,100);
+          el.querySelector(".bar > div").style.width = g.progress+"%";
+          document.getElementById(`p-${g.id}`).textContent = g.progress+"%";
+          saveAll();
+        };
+        gList.appendChild(el);
+      });
+    }
+
+    // ---------- Insights ----------
+    let iTasks, iSpend, iMinutes;
+    function renderInsights(){
+      const last7 = [...Array(7)].map((_,i)=>{
+        const d = new Date(); d.setDate(d.getDate()-(6-i));
+        const k = todayStr(d);
+        return {
+          label: k.slice(5),
+          done: state.tasks.filter(t=> t.done && todayStr(new Date(t.created))===k).length,
+          spend: state.expenses.filter(e=> toDateStr(e.date)===k).reduce((a,b)=>a+(+b.amount||0),0),
+          minutes: state.timeLogs.filter(l=> toDateStr(l.date)===k).reduce((a,b)=>a+(+b.minutes||0),0),
+        };
+      });
+      if(iTasks) iTasks.destroy();
+      if(iSpend) iSpend.destroy();
+      if(iMinutes) iMinutes.destroy();
+
+      iTasks = new Chart(document.getElementById("iTasks"), {
+        type:'line',
+        data:{ labels:last7.map(x=>x.label), datasets:[{ label:'Tasks', data:last7.map(x=>x.done) }] },
+        options:{ scales:{ y:{ beginAtZero:true } } }
+      });
+      iSpend = new Chart(document.getElementById("iSpend"), {
+        type:'bar',
+        data:{ labels:last7.map(x=>x.label), datasets:[{ label:'Spend', data:last7.map(x=>x.spend) }] },
+        options:{ scales:{ y:{ beginAtZero:true } }, plugins:{ tooltip:{ callbacks:{ label:ctx=> `${INR}${ctx.parsed.toFixed(0)}` } } } }
+      });
+      iMinutes = new Chart(document.getElementById("iMinutes"), {
+        type:'line',
+        data:{ labels:last7.map(x=>x.label), datasets:[{ label:'Minutes', data:last7.map(x=>x.minutes) }] },
+        options:{ scales:{ y:{ beginAtZero:true } } }
+      });
+    }
+
+    // ---------- Backup ----------
+    document.getElementById("exportBtn").onclick = ()=>{
+      const data = JSON.stringify(state, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `advanced-tracker-backup-${todayStr()}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    document.getElementById("importFile").onchange = (e)=>{
+      const file = e.target.files?.[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const obj = JSON.parse(reader.result);
+          state.tasks = obj.tasks ?? [];
+          state.habits = obj.habits ?? [];
+          state.expenses = obj.expenses ?? [];
+          state.timeLogs = obj.timeLogs ?? [];
+          state.goals = obj.goals ?? [];
+          saveAll();
+        }catch(err){ alert("Invalid backup file"); }
+      };
+      reader.readAsText(file);
+    };
+
+    // ---------- Helper ----------
+    function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+    function escapeHtml(s){ return (s||"").replace(/[&<>'"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;',\"'\":'&#39;','\"':'&quot;' }[c])); }
+
+    // ---------- Render all ----------
+    function render(){
+      // stats
+      const s = computeStats();
+      document.getElementById("statTasks").textContent = s.tasksDone;
+      document.getElementById("statHabits").textContent = s.habitsToday;
+      document.getElementById("statSpent").textContent = INR + s.spentToday.toFixed(0);
+      document.getElementById("statMinutes").textContent = s.minutesToday;
+
+      renderTasks();
+      renderHabits();
+      renderExpenses();
+      renderTime();
+      renderGoals();
+      renderInsights();
+    }
+
+    // init
+    render();
+  </script>
+</body>
+</html>
